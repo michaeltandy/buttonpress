@@ -1,3 +1,7 @@
+/* In the Arduino IDE and for my hardware, I choose board
+ * "WeMos D1 R2 & mini" and flash size "4M (1M SPIFFS)"
+ */
+
 #include <passwords.h>
 /* Put your wifi and other credentials as #defines in 
  * ~/Arduino/libraries/passwords/passwords.h
@@ -12,10 +16,6 @@
 const char* ssid = WIFI_SSID;
 const char* password = WIFI_PASSWORD;
 
-/*const char* requestHost = "data.sparkfun.com";
-const int requestPort = 80;
-const char* requestPathPrefix = SPARKFUN_REQUESTPATH;*/
-
 const int led = 2;
 
 const int NC_sense = 14;
@@ -29,30 +29,6 @@ extern "C" uint32_t _SPIFFS_page;
 extern "C" uint32_t _SPIFFS_block;
 
 void setup() {
-  /*pinMode(0, OUTPUT);
-  digitalWrite(0, 1);
-  pinMode(2, OUTPUT);
-  digitalWrite(2, 0);
-  
-  pinMode(4, OUTPUT);
-  digitalWrite(4, 1);
-  pinMode(5, OUTPUT);
-  digitalWrite(5, 1);
-  pinMode(12, OUTPUT);
-  digitalWrite(12, 1);
-  pinMode(13, OUTPUT);
-  digitalWrite(13, 1);
-  pinMode(14, OUTPUT);
-  digitalWrite(14, 1);
-  pinMode(15, OUTPUT);
-  digitalWrite(15, 1);
-  pinMode(16, OUTPUT);
-  digitalWrite(16, 0);
-
-  
-
-  delay(1000);*/
-
   pinMode(led, OUTPUT);
   digitalWrite(led, LOW);
 
@@ -127,9 +103,6 @@ void setup() {
     button_status += 200;
   }
 
-  //button_status += NO_counts*1000;
-  //button_status += NC_counts*100000;
-
   const char* requestHost = AWS_API_GATEWAY_URL;
   const int requestPort = 443;
 
@@ -143,9 +116,6 @@ void setup() {
 
   bool heartbeatOrPowerOn = (NO_counts == 0 && NC_counts == 50) || (NO_counts == 50 && NC_counts == 0);
   
-  
-  //String reqPath = String(requestPathPrefix)+"&battery_voltage="+String(countBefore)+"&change_type=";
-  //reqPath = reqPath+String(button_status)+"-NO-"+String(NO_counts)+"-NC-"+String(NC_counts)+"-"+(ESP.getResetInfoPtr()->reason);
   String reqPath = String("/prod/");
   String postBody = String("{ \"buttonclosed\": ") + (NC_counts>NO_counts?"false":"true") + 
                     ", \"heartbeatOrPowerOn\": "+(heartbeatOrPowerOn?"true":"false")+"}";
