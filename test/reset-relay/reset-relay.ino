@@ -72,18 +72,28 @@ void performTest(int thisEpoch, unsigned long timeMillis) {
   delay(100); // Allow time to boot & really put a load on the power supply.
   float analogAfter = analogRead(targetVoltagePin) * 5.0 / 1024.0;
   Serial.println(String("Voltage after ") + analogAfter);
-
-  Serial.print("Awaiting feedback led toggle...");
-  while (digitalRead(feedbackFromEsp) == HIGH) {}
-  while (digitalRead(feedbackFromEsp) == LOW) {}
-  while (digitalRead(feedbackFromEsp) == HIGH) {}
-  while (digitalRead(feedbackFromEsp) == LOW) {}
-  Serial.println(" OK");
-
+  
+  awaitLedFeedback();
   unsigned long awakeDuration = millis()-timeMillis;
   
   Serial.println(String("Summary,") + thisEpoch + "," + timeMillis 
         + "," + analogBefore + "," + analogAfter + "," + awakeDuration + "\n");
 }
 
+void awaitLedFeedback() {
+  Serial.print("Awaiting feedback led toggle...");
+  awaitLedValueOrTime(LOW);
+  awaitLedValueOrTime(HIGH);
+  awaitLedValueOrTime(LOW);
+  awaitLedValueOrTime(HIGH);
+  Serial.println(" OK");
+}
+
+void awaitLedValueOrTime(bool waitFor) {
+  int i=0;
+  while ((digitalRead(feedbackFromEsp) != waitFor) && (i < 10000)) {
+    delay(10);
+    i++;
+  }
+}
 
