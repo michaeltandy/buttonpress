@@ -73,27 +73,39 @@ void performTest(int thisEpoch, unsigned long timeMillis) {
   float analogAfter = analogRead(targetVoltagePin) * 5.0 / 1024.0;
   Serial.println(String("Voltage after ") + analogAfter);
   
-  awaitLedFeedback();
+  bool success = awaitLedFeedback();
   unsigned long awakeDuration = millis()-timeMillis;
   
   Serial.println(String("Summary,") + thisEpoch + "," + timeMillis 
-        + "," + analogBefore + "," + analogAfter + "," + awakeDuration + "\n");
+        + "," + analogBefore + "," + analogAfter + "," + awakeDuration
+        + "," + success + "\n");
 }
 
-void awaitLedFeedback() {
+bool awaitLedFeedback() {
   Serial.print("Awaiting feedback led toggle...");
-  awaitLedValueOrTime(LOW);
-  awaitLedValueOrTime(HIGH);
-  awaitLedValueOrTime(LOW);
-  awaitLedValueOrTime(HIGH);
-  Serial.println(" OK");
+  bool sawToggles = (awaitLedValueOrTime(LOW)
+      && awaitLedValueOrTime(HIGH)
+      && awaitLedValueOrTime(LOW)
+      && awaitLedValueOrTime(HIGH));
+  if (sawToggles) {
+    Serial.println(" OK");
+    return true;
+  } else {
+    Serial.println(" not seen. Continuing.");
+    return false;
+  }
 }
 
-void awaitLedValueOrTime(bool waitFor) {
-  int i=0;
-  while ((digitalRead(feedbackFromEsp) != waitFor) && (i < 10000)) {
-    delay(10);
-    i++;
+bool awaitLedValueOrTime(bool waitFor) {
+  uint32_t i=0;
+  while (true) {
+    if (digitalRead(feedbackFromEsp) == waitFor) {
+      return true;
+    }
+    if (i++ >= 60000) {
+      return false;
+    }
+    delay(1);
   }
 }
 
