@@ -10,27 +10,28 @@
  */
 
 #include <ESP8266WiFi.h>
-#include <EEPROM.h>
 #include <WiFiClientSecure.h>
+
+extern "C" {
+#include "spi_flash.h"
+}
 
 const char* ssid = WIFI_SSID;
 const char* password = WIFI_PASSWORD;
 
 const int led = 2;
+const int LED_ON = LOW;
+const int LED_OFF = HIGH;
 
 const int NC_sense = 14;
 const int NC_pull = 5;
 const int NO_sense = 12;
 const int NO_pull = 4;
 
-extern "C" uint32_t _SPIFFS_start;
-extern "C" uint32_t _SPIFFS_end;
-extern "C" uint32_t _SPIFFS_page;
-extern "C" uint32_t _SPIFFS_block;
-
 void setup() {
+  long startTime = millis();
   pinMode(led, OUTPUT);
-  digitalWrite(led, LOW);
+  digitalWrite(led, LED_ON);
 
   pinMode(NO_sense, INPUT);
   pinMode(NC_sense, INPUT);
@@ -57,20 +58,18 @@ void setup() {
     button_status += 2;
   }
 
-  for (int i=0 ; i<50 ; i++) {
+  for (int i=0 ; i<250 ; i++) {
     if (digitalRead(NC_sense) == HIGH) {
       NC_counts++;
     }
     if (digitalRead(NO_sense) == HIGH) {
       NO_counts++;
     }
+    if (i==50) {
+      digitalWrite(led, LED_OFF);
+    }
     delay(1);
   }
-
-  EEPROM.begin(10);
-  byte countBefore = EEPROM.read(1);
-  EEPROM.write(1, countBefore+1);
-  EEPROM.commit();
 
   Serial.print("NO counts:");
   Serial.print(NO_counts);
@@ -87,13 +86,17 @@ void setup() {
   }
   
   while (WiFi.status() != WL_CONNECTED) {
-    delay(500);
+    delay(50);
     Serial.print(".");
   }
   Serial.println("");
   Serial.println("WiFi connected");
   Serial.println("IP address: ");
   Serial.println(WiFi.localIP());
+  
+  long wifiTime = millis();
+  Serial.print("Wifi connected in: ");
+  Serial.println(wifiTime-startTime);
 
   if (digitalRead(NC_sense) == HIGH) {
     button_status += 100;
@@ -114,7 +117,11 @@ void setup() {
     return;
   }
 
-  bool heartbeatOrPowerOn = (NO_counts == 0 && NC_counts == 50) || (NO_counts == 50 && NC_counts == 0);
+  long connOpenedTime = millis();
+  Serial.print("http connection opened in: ");
+  Serial.println(connOpenedTime-wifiTime);
+
+  bool heartbeatOrPowerOn = (NO_counts == 0 && NC_counts == 250) || (NO_counts == 250 && NC_counts == 0);
   
   String reqPath = String("/prod/");
   String postBody = String("{ \"buttonclosed\": ") + (NC_counts>NO_counts?"false":"true") + 
@@ -129,10 +136,13 @@ void setup() {
   
   Serial.print("Sending request:");
   Serial.println(httpRequest);
-  
   client.print(httpRequest);
-
   Serial.println("request sent");
+
+  long httpSendTime = millis();
+  Serial.print("http post made in: ");
+  Serial.println(httpSendTime-connOpenedTime);
+  
   while (client.connected()) {
     String line = client.readStringUntil('\n');
     Serial.println(line);
@@ -146,27 +156,29 @@ void setup() {
   Serial.println("==========");
   Serial.println("closing connection");
 
-  
+  long httpReadTime = millis();
+  Serial.print("http read in: ");
+  Serial.println(httpReadTime-httpSendTime);
 
-  //////////////////////////////////////////////////////////
+  Serial.print("SPI_FLASH_SEC_SIZE: ");
+  Serial.println(SPI_FLASH_SEC_SIZE);
 
-  Serial.print("Flash chip ID: ");
-  Serial.println(ESP.getFlashChipId());
+  digitalWrite(led, LED_ON);
+  delay(50);
+  digitalWrite(led, LED_OFF);
 
-  Serial.print("_SPIFFS_start:");
-  Serial.print(_SPIFFS_start);
-  Serial.print(" @ ");
-  Serial.println((uint32_t)(&_SPIFFS_start));
-  Serial.print("_SPIFFS_end:");
-  Serial.print(_SPIFFS_end);
-  Serial.print(" @ ");
-  Serial.println((uint32_t)(&_SPIFFS_end));
+  long endTime = millis();
+  Serial.print("end-to-end time: ");
+  Serial.println(endTime-startTime);
 
   uint32_t micros_in_a_second = 1000000;
-
   ESP.deepSleep(60*60*micros_in_a_second, RF_DEFAULT);
 }
 
 void loop() {
+  /*digitalWrite(led, HIGH);
+  delay(2000);
+  digitalWrite(led, LOW);
+  testFlash();*/
   // Unreachable - sleep in setup code.
 }
