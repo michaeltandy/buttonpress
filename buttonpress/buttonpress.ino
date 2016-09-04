@@ -8,7 +8,7 @@
  * this lets us version control this file without 
  * sharing our passwords with the world.
  */
-
+#include <assert.h>
 #include <ESP8266WiFi.h>
 #include <WiFiClientSecure.h>
 
@@ -18,6 +18,8 @@ extern "C" {
 
 const char* ssid = WIFI_SSID;
 const char* password = WIFI_PASSWORD;
+
+char MAC_string[19];
 
 const int led = 2;
 const int LED_ON = LOW;
@@ -45,6 +47,7 @@ void setup() {
   Serial.println();
   Serial.println(String("connecting to ") + ssid);
   WiFi.begin(ssid, password);
+  populateMacString();
 
   unsigned long button_status = 0;
   int NC_counts = 0;
@@ -125,7 +128,8 @@ void setup() {
   
   String reqPath = String("/prod/");
   String postBody = String("{ \"buttonclosed\": ") + (NC_counts>NO_counts?"false":"true") + 
-                    ", \"heartbeatOrPowerOn\": "+(heartbeatOrPowerOn?"true":"false")+"}";
+                    ", \"heartbeatOrPowerOn\": "+(heartbeatOrPowerOn?"true":"false")+
+                    ", \"macAddress\": \""+MAC_string+"\" }";
 
   String httpRequest = String("POST ") + reqPath + " HTTP/1.1\r\n" +
                "Host: " + requestHost + "\r\n" +
@@ -173,6 +177,15 @@ void setup() {
 
   uint32_t micros_in_a_second = 1000000;
   ESP.deepSleep(60*60*micros_in_a_second, RF_DEFAULT);
+}
+
+void populateMacString() {
+  uint8_t MAC_array[6];
+  WiFi.macAddress(MAC_array);
+  assert(sizeof(MAC_string) > 2*sizeof(MAC_array)+1);
+  for (int i = 0; i < sizeof(MAC_array); ++i){
+    sprintf(&MAC_string[2*i],"%02X",MAC_array[i]);
+  }
 }
 
 void loop() {
