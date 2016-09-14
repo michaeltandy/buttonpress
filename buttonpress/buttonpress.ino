@@ -13,7 +13,7 @@
 #include <WiFiClientSecure.h>
 
 extern "C" {
-#include "spi_flash.h"
+#include "user_interface.h"
 }
 
 const char* ssid = WIFI_SSID;
@@ -30,8 +30,28 @@ const int NC_pull = 5;
 const int NO_sense = 12;
 const int NO_pull = 4;
 
+const uint32_t micros_in_a_second = 1000000;
+const int maxRunTimeMillis = 30*1000;
+os_timer_t timerCfg;
+
+const int statusMagicByte = 0xA0;
+typedef struct {
+  uint8_t statusMagicByte;
+  uint8_t unsentBitCount;
+  uint16_t messageSequenceNumber;
+  uint32_t unsentBitQueue;
+} STORED_STATUS;
+
 void setup() {
   long startTime = millis();
+
+  {
+    // Set a timer to 
+    os_timer_disarm(&timerCfg);
+    os_timer_setfn(&timerCfg, timeout, NULL);
+    os_timer_arm(&timerCfg, maxRunTimeMillis, true);
+  }
+  
   pinMode(led, OUTPUT);
   digitalWrite(led, LED_ON);
 
@@ -49,65 +69,53 @@ void setup() {
   WiFi.begin(ssid, password);
   populateMacString();
 
-  unsigned long button_status = 0;
-  int NC_counts = 0;
-  int NO_counts = 0;
-  
-  if (digitalRead(NC_sense) == HIGH) {
-    button_status += 1;
-  }
+  bool heartbeatOrPowerOn;
+  bool buttonClosed;
 
-  if (digitalRead(NO_sense) == HIGH) {
-    button_status += 2;
-  }
-
-  for (int i=0 ; i<250 ; i++) {
-    if (digitalRead(NC_sense) == HIGH) {
-      NC_counts++;
+  {
+    int NC_counts = 0;
+    int NO_counts = 0;
+    for (int i=0 ; i<250 ; i++) {
+      if (digitalRead(NC_sense) == HIGH) {
+        NC_counts++;
+      }
+      if (digitalRead(NO_sense) == HIGH) {
+        NO_counts++;
+      }
+      if (i==50) {
+        digitalWrite(led, LED_OFF);
+      }
+      delay(1);
     }
-    if (digitalRead(NO_sense) == HIGH) {
-      NO_counts++;
+    Serial.println(String("NO counts:") + NO_counts + " NC counts:" + NC_counts);
+    heartbeatOrPowerOn = (NO_counts == 0 && NC_counts == 250) || (NO_counts == 250 && NC_counts == 0);
+    buttonClosed = NC_counts<NO_counts;
+  }
+
+  STORED_STATUS statusBefore;
+  system_rtc_mem_read(64, &statusBefore, sizeof(statusBefore));
+  if (statusBefore.statusMagicByte != statusMagicByte) {
+    statusBefore.statusMagicByte = statusMagicByte;
+    statusBefore.unsentBitCount = 0;
+    statusBefore.messageSequenceNumber = 0;
+    statusBefore.unsentBitQueue = 0;
+  }
+
+  {
+    int i=0;
+    while (WiFi.status() != WL_CONNECTED) {
+      delay(50);
+      Serial.print(".");
+      if (++i % 50 == 0) Serial.println("");
     }
-    if (i==50) {
-      digitalWrite(led, LED_OFF);
-    }
-    delay(1);
+    Serial.println("");
+    Serial.println("WiFi connected");
+    Serial.println("IP address: ");
+    Serial.println(WiFi.localIP());
   }
-
-  Serial.print("NO counts:");
-  Serial.print(NO_counts);
-  Serial.print(" NC counts:");
-  Serial.print(NC_counts);
-  Serial.println();
-
-  if (digitalRead(NC_sense) == HIGH) {
-    button_status += 10;
-  }
-
-  if (digitalRead(NO_sense) == HIGH) {
-    button_status += 20;
-  }
-  
-  while (WiFi.status() != WL_CONNECTED) {
-    delay(50);
-    Serial.print(".");
-  }
-  Serial.println("");
-  Serial.println("WiFi connected");
-  Serial.println("IP address: ");
-  Serial.println(WiFi.localIP());
-  
   long wifiTime = millis();
   Serial.print("Wifi connected in: ");
   Serial.println(wifiTime-startTime);
-
-  if (digitalRead(NC_sense) == HIGH) {
-    button_status += 100;
-  }
-
-  if (digitalRead(NO_sense) == HIGH) {
-    button_status += 200;
-  }
 
   const char* requestHost = AWS_API_GATEWAY_URL;
   const int requestPort = 443;
@@ -124,10 +132,8 @@ void setup() {
   Serial.print("http connection opened in: ");
   Serial.println(connOpenedTime-wifiTime);
 
-  bool heartbeatOrPowerOn = (NO_counts == 0 && NC_counts == 250) || (NO_counts == 250 && NC_counts == 0);
-  
   String reqPath = String("/prod/");
-  String postBody = String("{ \"buttonclosed\": ") + (NC_counts>NO_counts?"false":"true") + 
+  String postBody = String("{ \"buttonclosed\": ") + (buttonClosed?"true":"false") + 
                     ", \"heartbeatOrPowerOn\": "+(heartbeatOrPowerOn?"true":"false")+
                     ", \"macAddress\": \""+MAC_string+"\" }";
 
@@ -164,9 +170,6 @@ void setup() {
   Serial.print("http read in: ");
   Serial.println(httpReadTime-httpSendTime);
 
-  Serial.print("SPI_FLASH_SEC_SIZE: ");
-  Serial.println(SPI_FLASH_SEC_SIZE);
-
   digitalWrite(led, LED_ON);
   delay(50);
   digitalWrite(led, LED_OFF);
@@ -175,7 +178,6 @@ void setup() {
   Serial.print("end-to-end time: ");
   Serial.println(endTime-startTime);
 
-  uint32_t micros_in_a_second = 1000000;
   ESP.deepSleep(60*60*micros_in_a_second, RF_DEFAULT);
 }
 
@@ -188,10 +190,10 @@ void populateMacString() {
   }
 }
 
+void timeout(void *unused) {
+  ESP.deepSleep(10*60*micros_in_a_second, RF_DEFAULT);
+}
+
 void loop() {
-  /*digitalWrite(led, HIGH);
-  delay(2000);
-  digitalWrite(led, LOW);
-  testFlash();*/
   // Unreachable - sleep in setup code.
 }
