@@ -12,6 +12,8 @@
 #include <ESP8266WiFi.h>
 #include <WiFiClientSecure.h>
 
+ADC_MODE(ADC_VCC);
+
 extern "C" {
 #include "user_interface.h"
 }
@@ -34,19 +36,13 @@ const uint32_t micros_in_a_second = 1000000;
 const int maxRunTimeMillis = 30*1000;
 os_timer_t timerCfg;
 
-const int statusMagicByte = 0xA0;
-typedef struct {
-  uint8_t statusMagicByte;
-  uint8_t unsentBitCount;
-  uint16_t messageSequenceNumber;
-  uint32_t unsentBitQueue;
-} STORED_STATUS;
-
 void setup() {
   long startTime = millis();
 
   {
-    // Set a timer to 
+    // Set a timer so if there's a failure
+    // (e.g. wifi unavailable, server unavailable, whatever)
+    // we don't stay awake forever and run down the battery.
     os_timer_disarm(&timerCfg);
     os_timer_setfn(&timerCfg, timeout, NULL);
     os_timer_arm(&timerCfg, maxRunTimeMillis, true);
@@ -65,7 +61,8 @@ void setup() {
   
   Serial.begin(115200);
   Serial.println();
-  Serial.println(String("connecting to ") + ssid);
+
+  Serial.println("Connecting to WiFi.");
   WiFi.begin(ssid, password);
   populateMacString();
 
@@ -92,14 +89,7 @@ void setup() {
     buttonClosed = NC_counts<NO_counts;
   }
 
-  STORED_STATUS statusBefore;
-  system_rtc_mem_read(64, &statusBefore, sizeof(statusBefore));
-  if (statusBefore.statusMagicByte != statusMagicByte) {
-    statusBefore.statusMagicByte = statusMagicByte;
-    statusBefore.unsentBitCount = 0;
-    statusBefore.messageSequenceNumber = 0;
-    statusBefore.unsentBitQueue = 0;
-  }
+  int espVcc = ESP.getVcc();
 
   {
     int i=0;
@@ -135,7 +125,10 @@ void setup() {
   String reqPath = String("/prod/");
   String postBody = String("{ \"buttonclosed\": ") + (buttonClosed?"true":"false") + 
                     ", \"heartbeatOrPowerOn\": "+(heartbeatOrPowerOn?"true":"false")+
-                    ", \"macAddress\": \""+MAC_string+"\" }";
+                    ", \"macAddress\": \""+MAC_string+"\""+
+                    ", \"wifiConnectTime\": \""+(wifiTime-startTime)+"\""+
+                    ", \"httpsConnectTime\": \""+(connOpenedTime-wifiTime)+"\""+
+                    ", \"espVcc\": "+espVcc+" }";
 
   String httpRequest = String("POST ") + reqPath + " HTTP/1.1\r\n" +
                "Host: " + requestHost + "\r\n" +
@@ -144,8 +137,8 @@ void setup() {
                "User-Agent: SmartButtonESP8266\r\n" +
                "Connection: close\r\n\r\n"+postBody;
   
-  Serial.print("Sending request:");
-  Serial.println(httpRequest);
+  Serial.print("Sending request with body:");
+  Serial.println(postBody);
   client.print(httpRequest);
   Serial.println("request sent");
 
@@ -178,7 +171,7 @@ void setup() {
   Serial.print("end-to-end time: ");
   Serial.println(endTime-startTime);
 
-  ESP.deepSleep(60*60*micros_in_a_second, RF_DEFAULT);
+  ESP.deepSleep(4*60*60*micros_in_a_second, RF_DEFAULT);
 }
 
 void populateMacString() {
